@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sport</title>
+<meta name="description" content="Gli allenamenti del mese: cosa fare adesso e cosa hai già fatto.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sport">
+<meta name="theme-color" content="#f4f5f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#11141c" media="(prefers-color-scheme: dark)">
+<script>try { var t = JSON.parse(localStorage.getItem('sport.v1')).theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="tabs" aria-label="Schermate">
+  <button id="tab-home" type="button" data-tab="home" aria-label="Allenamenti"><svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true"><rect x="4" y="18" width="6" height="12" rx="2"/><rect x="10" y="12" width="7" height="24" rx="2"/><rect x="17" y="21" width="14" height="6"/><rect x="31" y="12" width="7" height="24" rx="2"/><rect x="38" y="18" width="6" height="12" rx="2"/></svg></button>
+  <button id="tab-stats" type="button" data-tab="stats" aria-label="Statistiche"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="12" width="5" height="9" rx="1.5"/><rect x="9.5" y="3" width="5" height="18" rx="1.5"/><rect x="16" y="8" width="5" height="13" rx="1.5"/></svg></button>
+</nav>
+<main id="view"></main>
+<div id="sheet" class="sheet" hidden></div>
+<div id="update" class="update" role="status" hidden><span>Nuova versione disponibile</span><button type="button">Aggiorna</button></div>
+<div id="toast" class="toast" role="status" hidden></div>
+<input id="json-input" type="file" accept="application/json,.json" hidden>
+<script src="logic.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

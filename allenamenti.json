@@ -1,0 +1,17 @@
+{
+  "piano": [
+    { "id": "corsa5", "nome": "Corsa 5 km", "gruppo": "corsa", "aMese": 12 },
+    { "id": "ripetute", "nome": "Ripetute", "gruppo": "corsa", "aMese": 4 },
+    { "id": "gym", "nome": "Garage", "gruppo": "forza", "aMese": 4 },
+    { "id": "kb", "nome": "Kettlebell", "gruppo": "forza", "aMese": 2 },
+    { "id": "pt", "nome": "Personal trainer", "gruppo": "forza", "aMese": 4 }
+  ],
+  "altro": [
+    { "id": "pattini", "nome": "Pattini" },
+    { "id": "sci", "nome": "Sci" },
+    { "id": "nuoto", "nome": "Nuoto" },
+    { "id": "bici", "nome": "Bici" },
+    { "id": "basket", "nome": "Basket" },
+    { "id": "calcetto", "nome": "Calcetto" }
+  ]
+}
