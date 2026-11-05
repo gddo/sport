@@ -1,5 +1,5 @@
 const KEY = 'sport.v1', PLAN_KEY = 'sport.plan';
-const VERSION = 'r26.1.0'; // tenere allineato con sw.js
+const VERSION = 'r26.2.0'; // tenere allineato con sw.js
 const { DAYS, SLOTS, dateKey, fromKey, addDays, dayIndex, mondayOf, currentSlot, nextSlot, slotId, monthPrefix, monthCounts, lastDone, rank, validPlan } = L;
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -31,7 +31,8 @@ const icon = item => `<svg class="ic" viewBox="0 0 48 48" fill="currentColor" ar
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
 let state = { logs: {}, ...load(KEY, {}) };
 let plan = load(PLAN_KEY, null);
-let tab = 'home', toastTimer = null, picker = null, chooser = null, altroOpen = false;
+let tab = 'home', toastTimer = null, picker = null, chooser = null, altroOpen = false, editor = null;
+const sheetOpen = () => picker || chooser || altroOpen || editor;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
   catch (e) { showToast('Salvataggio non riuscito: la memoria del browser è bloccata.'); }
@@ -40,7 +41,8 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
 
 const groupOf = item => (['corsa', 'forza'].includes(item.gruppo) ? item.gruppo : 'altro');
 const allItems = () => [...plan.piano, ...(plan.altro || [])];
-const find = id => allItems().find(x => x.id === id) || { id, nome: id };
+// Le voci eliminate restano in archivio: i giorni già segnati continuano a mostrare nome e icona.
+const find = id => [...allItems(), ...(plan.archivio || [])].find(x => x.id === id) || { id, nome: id };
 const MON3 = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 const MONTHS = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const cap = s => s[0].toUpperCase() + s.slice(1);
@@ -114,11 +116,72 @@ function applyTheme() {
 }
 function render() {
   if (!plan) { $('#view').innerHTML = '<p class="sec">Il file allenamenti.json non si carica: apri l\'app una volta con la connessione attiva.</p>'; return; }
-  $('#view').innerHTML = tab === 'home' ? renderHome() : renderStats();
+  $('#view').innerHTML = tab === 'home' ? renderHome() : tab === 'prog' ? renderProg() : renderStats();
   document.querySelectorAll('.tabs button').forEach(b => b.dataset.tab === tab ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
   if (altroOpen) renderAltro();
   if (picker) renderPicker();
   if (chooser) renderChooser();
+}
+
+const ICON_NAMES = ['corsa', 'ripetute', 'forza', 'kettlebell', 'pt', 'bici', 'rulli', 'montagna', 'nuoto', 'pattini', 'sci', 'basket', 'calcetto', 'altro'];
+const ICON_GROUP = { corsa: 'corsa', ripetute: 'corsa', forza: 'forza', kettlebell: 'forza', kb: 'forza', pt: 'forza' };
+const iconName = item => [item.icona, item.id, item.gruppo].find(n => n && ICONS[n]) || 'altro';
+const savePlan = () => { try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); } catch (e) { showToast('Salvataggio non riuscito: la memoria del browser è bloccata.'); } };
+
+function renderProg() {
+  const edit = (x, list) => `<button class="pick-row" type="button" id="e-${esc(x.id)}" data-edit="${esc(x.id)}" data-list="${list}" aria-label="Modifica ${esc(x.nome)}"><span class="i g-${groupOf(x)}">${icon(x)}</span><span class="n">${esc(x.nome)}</span></button>`;
+  const rows = plan.piano.map(x => `<div class="prow">${edit(x, 'piano')}
+    <div class="step"><button type="button" id="m-${esc(x.id)}" data-adj="${esc(x.id)}" data-d="-1" aria-label="Una volta in meno al mese">−</button><b>${x.aMese || 1}</b><button type="button" id="p-${esc(x.id)}" data-adj="${esc(x.id)}" data-d="1" aria-label="Una volta in più al mese">+</button></div></div>`).join('');
+  const tot = plan.piano.reduce((a, x) => a + (x.aMese || 1), 0);
+  return `<section class="card"><h2>Allenamenti del mese</h2>
+    <p class="sub">${tot} al mese in totale. Tocca un nome per modificarlo.</p>
+    ${rows}<button class="btn alt" id="add-piano" type="button">Aggiungi allenamento</button></section>
+  <section class="card"><h2>Altro</h2>
+    <p class="sub">Sport senza obiettivo mensile.</p>
+    ${(plan.altro || []).map(x => `<div class="prow">${edit(x, 'altro')}</div>`).join('')}
+    <button class="btn alt" id="add-altro" type="button">Aggiungi sport</button></section>`;
+}
+function renderEditor() {
+  const e = editor;
+  $('#sheet').innerHTML = `<div class="sheet-in">
+    <div class="sh-head"><h2>${e.id ? 'Modifica' : 'Nuovo'}</h2><button class="close" id="close" type="button" aria-label="Chiudi">×</button></div>
+    <label class="fld" for="ed-name">Nome<input id="ed-name" type="text" maxlength="40" autocomplete="off" value="${esc(e.nome)}" placeholder="Corsa 10 km"></label>
+    <div class="fld">Dove<div class="seg"><button class="btn alt" id="ed-piano" type="button" data-ed-list="piano" aria-pressed="${e.list === 'piano'}">Nel mese</button><button class="btn alt" id="ed-altro" type="button" data-ed-list="altro" aria-pressed="${e.list === 'altro'}">In Altro</button></div></div>
+    <div class="fld">Icona<div class="icons">${ICON_NAMES.map(n => `<button type="button" id="ic-${n}" data-ed-icon="${n}" class="g-${e.list === 'altro' ? 'altro' : ICON_GROUP[n] || 'altro'}" aria-label="${n}" aria-pressed="${e.icona === n}">${icon({ icona: n })}</button>`).join('')}</div></div>
+    <button class="btn" id="ed-save" type="button">Salva</button>
+    ${e.id ? '<button class="btn alt" id="ed-del" type="button">Elimina</button>' : ''}
+  </div>`;
+}
+function openEditor(id, list) {
+  const x = id && (plan[list] || []).find(i => i.id === id);
+  editor = { id, list, nome: x ? x.nome : '', icona: x ? iconName(x) : (list === 'piano' ? 'corsa' : 'altro') };
+  renderEditor(); showSheet();
+}
+function changePlan(fn, text) {
+  const before = JSON.stringify(plan);
+  fn(); savePlan(); closeSheet(); render();
+  showToast(text, () => { plan = JSON.parse(before); savePlan(); render(); });
+}
+function saveEditor() {
+  const e = editor, nome = $('#ed-name').value.trim();
+  if (!nome) return showToast('Scrivi un nome.');
+  changePlan(() => {
+    plan.altro = plan.altro || [];
+    const from = e.id ? (plan.piano.some(x => x.id === e.id) ? 'piano' : 'altro') : e.list;
+    const i = e.id ? plan[from].findIndex(x => x.id === e.id) : -1;
+    const old = i >= 0 ? plan[from][i] : {};
+    const item = { id: e.id || `x${Date.now().toString(36)}`, nome, icona: e.icona };
+    if (e.list === 'piano') { item.gruppo = ICON_GROUP[e.icona] || 'altro'; item.aMese = old.aMese || 4; }
+    if (from === e.list && i >= 0) plan[from][i] = item;
+    else { if (i >= 0) plan[from].splice(i, 1); plan[e.list].push(item); }
+  }, `Salvato: ${nome}`);
+}
+function deleteItem() {
+  const e = editor, item = find(e.id);
+  changePlan(() => {
+    plan[e.list] = plan[e.list].filter(x => x.id !== e.id);
+    plan.archivio = [...(plan.archivio || []), item];
+  }, `Eliminato: ${item.nome}`);
 }
 
 function cellHtml(k, s, today, cur) {
@@ -165,7 +228,7 @@ function showSheet() {
   $('#toast').hidden = true; $('#sheet').hidden = false; $('#sheet').scrollTop = 0;
   document.body.style.overflow = 'hidden';
 }
-function closeSheet() { picker = null; chooser = null; altroOpen = false; $('#sheet').hidden = true; document.body.style.overflow = ''; }
+function closeSheet() { picker = null; chooser = null; altroOpen = false; editor = null; $('#sheet').hidden = true; document.body.style.overflow = ''; }
 
 function showToast(text, undo) {
   const t = $('#toast');
@@ -186,7 +249,7 @@ function mark(id, date, slot) {
 
 async function exportData() {
   const name = `sport-${dateKey(now())}.json`;
-  const file = new File([JSON.stringify(state, null, 1)], name, { type: 'application/json' });
+  const file = new File([JSON.stringify({ ...state, plan }, null, 1)], name, { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -195,13 +258,23 @@ async function importData(file) {
   try {
     const d = JSON.parse(await file.text());
     if (!d.logs) throw 0;
-    const before = state; state = { logs: {}, ...d }; save(); render();
-    showToast(`Ripristinati ${Object.keys(d.logs).length} allenamenti`, () => { state = before; save(); render(); });
+    const before = state, beforePlan = plan;
+    const { plan: p, ...rest } = d;
+    state = { logs: {}, ...rest }; if (validPlan(p)) { plan = p; savePlan(); } save(); render();
+    showToast(`Ripristinati ${Object.keys(d.logs).length} allenamenti`, () => { state = before; plan = beforePlan; savePlan(); save(); render(); });
   } catch (e) { showToast('Il file non è una copia di Sport: scegli il file sport-….json.'); }
 }
 
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.edit) return openEditor(b.dataset.edit, b.dataset.list);
+  if (b.dataset.edIcon) { editor.nome = $('#ed-name').value; editor.icona = b.dataset.edIcon; return renderEditor(); }
+  if (b.dataset.edList) { editor.nome = $('#ed-name').value; editor.list = b.dataset.edList; return renderEditor(); }
+  if (b.dataset.adj) {
+    const x = plan.piano.find(i => i.id === b.dataset.adj), v = (x.aMese || 1) + +b.dataset.d;
+    if (v < 1) return;
+    x.aMese = v; savePlan(); return render();
+  }
   if (b.dataset.tab) { tab = b.dataset.tab; render(); window.scrollTo(0, 0); return; }
   if (b.dataset.altro) { altroOpen = true; renderAltro(); return showSheet(); }
   if (b.dataset.src) { altroOpen = false; picker = { id: b.dataset.src, monday: mondayOf(now()) }; renderPicker(); return showSheet(); }
@@ -211,6 +284,10 @@ document.addEventListener('click', e => {
   if (b.dataset.themeSet) { state.theme = b.dataset.themeSet; save(); applyTheme(); return render(); }
   switch (b.id) {
     case 'close': return closeSheet();
+    case 'add-piano': return openEditor(null, 'piano');
+    case 'add-altro': return openEditor(null, 'altro');
+    case 'ed-save': return saveEditor();
+    case 'ed-del': return deleteItem();
     case 'wk-prev': picker.monday = addDays(picker.monday, -7); return renderPicker();
     case 'wk-next': picker.monday = addDays(picker.monday, 7); return renderPicker();
     case 'clear-slot': return mark(state.logs[slotId(chooser.date, chooser.slot)], chooser.date, chooser.slot);
@@ -219,24 +296,18 @@ document.addEventListener('click', e => {
   }
 });
 $('#json-input').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) importData(f); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { loadPlan(); if (!picker && !chooser && !altroOpen) render(); } });
-setInterval(() => { if (!document.hidden && !picker && !chooser && !altroOpen) render(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !sheetOpen()) render(); });
+setInterval(() => { if (!document.hidden && !sheetOpen()) render(); }, 60000);
 
-/* Il piano si rilegge a ogni apertura: se il file è sbagliato resta l'ultimo valido. */
+/* allenamenti.json serve solo alla prima apertura: dopo il piano vive nell'app. */
 async function loadPlan() {
+  if (plan) return;
   try {
-    const r = await fetch('allenamenti.json', { cache: 'no-cache' });
-    const p = await r.json();
+    const p = await (await fetch('allenamenti.json', { cache: 'no-cache' })).json();
     if (!validPlan(p)) throw new Error('schema');
-    if (JSON.stringify(p) !== JSON.stringify(plan)) {
-      plan = p;
-      try { localStorage.setItem(PLAN_KEY, JSON.stringify(p)); } catch (e) { /* resta in memoria */ }
-      if (!picker && !chooser && !altroOpen) render();
-    }
-  } catch (e) {
-    if (navigator.onLine) showToast('allenamenti.json ha un errore: uso l\'ultimo piano valido.');
-    if (!plan) render();
-  }
+    plan = p; savePlan();
+  } catch (e) { /* render mostra il messaggio */ }
+  render();
 }
 
 /* Aggiornamenti: la versione nuova resta in attesa finché non tocchi Aggiorna. */

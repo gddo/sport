@@ -1,4 +1,4 @@
-const CACHE = 'sport-r26.1.0'; // cambiare a ogni pubblicazione: è ciò che fa comparire il banner
+const CACHE = 'sport-r26.2.0'; // cambiare a ogni pubblicazione: è ciò che fa comparire il banner
 const PLAN = 'allenamenti.json';
 const FILES = ['./', 'index.html', 'style.css', 'logic.js', 'app.js', PLAN, 'manifest.webmanifest', 'vendor/bricolage.woff2', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' }))))));
