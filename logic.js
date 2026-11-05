@@ -1,8 +1,6 @@
 /* Logica pura: nessun accesso al DOM, così si può provare anche fuori dal browser. */
 (function (root) {
   const DAYS = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
-  const SLOTS = { P: 'Pausa pranzo', S: 'Sera' };
-  const CUT = 16 * 60 + 30; // dalle 16:30 l'allenamento corrente è quello di sera
 
   const pad = n => String(n).padStart(2, '0');
   const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -10,10 +8,9 @@
   const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, 12);
   const dayIndex = d => (d.getDay() + 6) % 7;
   const mondayOf = d => addDays(d, -dayIndex(d));
-  const currentSlot = now => (now.getHours() * 60 + now.getMinutes() < CUT ? 'P' : 'S');
-  const nextSlot = (k, s) => (s === 'P' ? { date: k, slot: 'S' } : { date: dateKey(addDays(fromKey(k), 1)), slot: 'P' });
-  const prevSlot = (k, s) => (s === 'S' ? { date: k, slot: 'P' } : { date: dateKey(addDays(fromKey(k), -1)), slot: 'S' });
   const slotId = (date, slot) => `${date}|${slot}`;
+  // Ogni giorno ha due spazi: P è il primo e S il secondo (nomi storici, così i dati salvati restano validi).
+  const freeSlot = (logs, date) => (!logs[slotId(date, 'P')] ? 'P' : !logs[slotId(date, 'S')] ? 'S' : null);
   const monthPrefix = d => dateKey(d).slice(0, 7);
 
   function monthCounts(logs, now) {
@@ -35,12 +32,12 @@
      così un allenamento saltato sale finché non lo recuperi.
      Chi è stato fatto nell'ultimo spazio perde un punto, per alternare. */
   function rank(plan, logs, now) {
-    const today = dateKey(now), slot0 = currentSlot(now);
+    const today = dateKey(now);
     const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const pace = now.getDate() / days;
     const counts = monthCounts(logs, now);
-    const free = logs[slotId(today, slot0)] ? nextSlot(today, slot0) : { date: today, slot: slot0 };
-    const p = prevSlot(free.date, free.slot), prevId = logs[slotId(p.date, p.slot)];
+    const yest = dateKey(addDays(now, -1));
+    const prevId = logs[slotId(today, 'S')] || logs[slotId(today, 'P')] || logs[slotId(yest, 'S')] || logs[slotId(yest, 'P')];
     const rows = plan.piano.map((item, order) => {
       const target = item.aMese || 0, done = counts[item.id] || 0, last = lastDone(logs, item.id, today);
       return { item, id: item.id, target, done, rem: target - done, order,
@@ -48,7 +45,7 @@
         age: last ? (fromKey(today) - fromKey(last)) / 864e5 : 9999 };
     });
     const cmp = (a, b) => b.score - a.score || b.rem - a.rem || b.age - a.age || a.order - b.order;
-    return { todo: rows.filter(r => r.rem > 0).sort(cmp), covered: rows.filter(r => r.rem <= 0), counts, today, slot: slot0 };
+    return { todo: rows.filter(r => r.rem > 0).sort(cmp), covered: rows.filter(r => r.rem <= 0), counts, today };
   }
 
   function validPlan(p) {
@@ -58,6 +55,6 @@
     return new Set(ids).size === ids.length;
   }
 
-  const api = { DAYS, SLOTS, dateKey, fromKey, addDays, dayIndex, mondayOf, currentSlot, nextSlot, slotId, monthPrefix, monthCounts, lastDone, rank, validPlan };
+  const api = { DAYS, dateKey, fromKey, addDays, dayIndex, mondayOf, slotId, freeSlot, monthPrefix, monthCounts, lastDone, rank, validPlan };
   if (typeof module !== 'undefined') module.exports = api; else root.L = api;
 })(this);

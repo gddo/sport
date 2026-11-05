@@ -1,6 +1,6 @@
 const KEY = 'sport.v1', PLAN_KEY = 'sport.plan';
-const VERSION = 'r26.2.0'; // tenere allineato con sw.js
-const { DAYS, SLOTS, dateKey, fromKey, addDays, dayIndex, mondayOf, currentSlot, nextSlot, slotId, monthPrefix, monthCounts, lastDone, rank, validPlan } = L;
+const VERSION = 'r26.3.0'; // tenere allineato con sw.js
+const { DAYS, dateKey, fromKey, addDays, dayIndex, mondayOf, slotId, freeSlot, monthPrefix, monthCounts, lastDone, rank, validPlan } = L;
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const now = () => (window.__NOW ? new Date(window.__NOW) : new Date());
@@ -46,14 +46,13 @@ const find = id => [...allItems(), ...(plan.archivio || [])].find(x => x.id === 
 const MON3 = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
 const MONTHS = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const cap = s => s[0].toUpperCase() + s.slice(1);
-function slotName(date, slot, today) {
-  const m = SLOTS[slot].toLowerCase();
+function dayName(date, today) {
   const tom = dateKey(addDays(fromKey(today), 1)), yest = dateKey(addDays(fromKey(today), -1));
-  if (date === today) return `${m} di oggi`;
-  if (date === tom) return `${m} di domani`;
-  if (date === yest) return `${m} di ieri`;
+  if (date === today) return 'oggi';
+  if (date === tom) return 'domani';
+  if (date === yest) return 'ieri';
   const d = fromKey(date);
-  return `${m} di ${DAYS[dayIndex(d)].toLowerCase()} ${d.getDate()}`;
+  return `${DAYS[dayIndex(d)].toLowerCase()} ${d.getDate()}`;
 }
 
 function tile(r, i, cls = '') {
@@ -72,14 +71,13 @@ function renderHome() {
 }
 
 function renderCalendar(today) {
-  const start = addDays(mondayOf(now()), -7), cur = currentSlot(now());
+  const start = addDays(mondayOf(now()), -7);
   let cells = ['L', 'M', 'M', 'G', 'V', 'S', 'D'].map(d => `<span class="h">${d}</span>`).join('');
   for (let i = 0; i < 14; i++) {
     const day = addDays(start, i), k = dateKey(day);
     const slot = s => {
       const id = state.logs[slotId(k, s)], item = id && find(id);
-      const fut = k > today || (k === today && s === 'S' && cur === 'P');
-      return `<button type="button" id="s-${k}-${s}" class="slot ${fut ? 'fut' : ''} ${item ? `full g-${groupOf(item)}` : 'empty'}" data-slot="${k}|${s}" aria-label="${SLOTS[s]} del ${day.getDate()}: ${item ? esc(item.nome) : 'vuoto'}">${item ? icon(item) : ''}</button>`;
+      return `<button type="button" id="s-${k}-${s}" class="slot ${k > today ? 'fut' : ''} ${item ? `full g-${groupOf(item)}` : 'empty'}" data-slot="${k}|${s}" aria-label="Giorno ${day.getDate()}, ${s === 'P' ? 'primo' : 'secondo'} spazio: ${item ? esc(item.nome) : 'vuoto'}">${item ? icon(item) : ''}</button>`;
     };
     cells += `<div class="cal-d ${k === today ? 't' : ''}"><span class="n">${day.getDate()}</span>${slot('P')}${slot('S')}</div>`;
   }
@@ -184,29 +182,30 @@ function deleteItem() {
   }, `Eliminato: ${item.nome}`);
 }
 
-function cellHtml(k, s, today, cur) {
+function cellHtml(k, s, today, curSlot) {
   const id = state.logs[slotId(k, s)], item = id && find(id);
-  const time = k < today ? 'past' : (k > today || (k === today && s === 'S' && cur.slot === 'P')) ? 'fut' : '';
-  const isCur = k === cur.date && s === cur.slot;
-  return `<button type="button" id="c-${k}-${s}" class="cell ${time} ${item ? `full g-${groupOf(item)}` : 'empty'} ${isCur ? 'cur' : ''}" data-date="${k}" data-slot-p="${s}" aria-label="${cap(slotName(k, s, today))}: ${item ? esc(item.nome) : 'vuoto'}">${item ? `${icon(item)}<span>${esc(item.nome)}</span>` : '+'}</button>`;
+  const time = k < today ? 'past' : k > today ? 'fut' : '';
+  return `<button type="button" id="c-${k}-${s}" class="cell ${time} ${item ? `full g-${groupOf(item)}` : 'empty'} ${k === today && s === curSlot ? 'cur' : ''}" data-date="${k}" data-slot-p="${s}" aria-label="${cap(dayName(k, today))}, ${s === 'P' ? 'primo' : 'secondo'} spazio: ${item ? esc(item.nome) : 'vuoto'}">${item ? `${icon(item)}<span>${esc(item.nome)}</span>` : '+'}</button>`;
 }
-function quick(sl, today, label, main) {
-  const id = state.logs[slotId(sl.date, sl.slot)];
-  return `<button type="button" id="q-${main ? 'now' : 'next'}" class="q ${main ? 'main' : ''}" data-date="${sl.date}" data-slot-p="${sl.slot}"><small>${label}</small><b>${cap(slotName(sl.date, sl.slot, today))}</b><span>${id ? `C'è già: ${esc(find(id).nome)}` : ''}</span></button>`;
+// Oggi e Domani riempiono il primo spazio libero; con il giorno pieno sostituiscono il secondo.
+function quick(date, today, main) {
+  const slot = freeSlot(state.logs, date) || 'S';
+  const names = ['P', 'S'].map(s => state.logs[slotId(date, s)]).filter(Boolean).map(id => esc(find(id).nome));
+  return `<button type="button" id="q-${main ? 'now' : 'next'}" class="q ${main ? 'main' : ''}" data-date="${date}" data-slot-p="${slot}"><b>${cap(dayName(date, today))}</b><span>${names.length ? `C'è già: ${names.join(', ')}` : ''}</span></button>`;
 }
 function renderPicker() {
   const n = now(), today = dateKey(n), item = find(picker.id);
-  const cur = { date: today, slot: currentSlot(n) }, nx = nextSlot(today, cur.slot);
+  const tomorrow = dateKey(addDays(n, 1)), curSlot = freeSlot(state.logs, today);
   const a = picker.monday, b = addDays(a, 6);
   const rows = Array.from({ length: 7 }, (_, i) => {
     const d = addDays(a, i), k = dateKey(d);
-    return `<div class="d ${k === today ? 't' : ''}">${DAYS[i].slice(0, 3)}<small>${d.getDate()}</small></div>${cellHtml(k, 'P', today, cur)}${cellHtml(k, 'S', today, cur)}`;
+    return `<div class="d ${k === today ? 't' : ''}">${DAYS[i].slice(0, 3)}<small>${d.getDate()}</small></div>${cellHtml(k, 'P', today, curSlot)}${cellHtml(k, 'S', today, curSlot)}`;
   }).join('');
   $('#sheet').innerHTML = `<div class="sheet-in">
     <div class="sh-head g-${groupOf(item)}">${icon(item)}<h2>${esc(item.nome)}</h2><button class="close" id="close" type="button" aria-label="Chiudi">×</button></div>
-    <div class="quick">${quick(cur, today, 'Adesso', true)}${quick(nx, today, 'Prossimo', false)}</div>
+    <div class="quick">${quick(today, today, true)}${quick(tomorrow, today, false)}</div>
     <div class="wk-nav"><button id="wk-prev" type="button" aria-label="Settimana precedente">‹</button><b>${a.getDate()} ${MON3[a.getMonth()]} – ${b.getDate()} ${MON3[b.getMonth()]}</b><button id="wk-next" type="button" aria-label="Settimana successiva">›</button></div>
-    <div class="wk"><span></span><span class="h">Pausa pranzo</span><span class="h">Sera</span>${rows}</div>
+    <div class="wk">${rows}</div>
     <p class="hint">Un riquadro già pieno viene sostituito. Tocca un riquadro con ${esc(item.nome.toLowerCase())} per toglierlo.</p>
   </div>`;
 }
@@ -219,7 +218,7 @@ function renderAltro() {
 function renderChooser() {
   const { date, slot } = chooser, d = fromKey(date), curId = state.logs[slotId(date, slot)];
   $('#sheet').innerHTML = `<div class="sheet-in">
-    <div class="sh-head"><h2>${SLOTS[slot]} di ${DAYS[dayIndex(d)].toLowerCase()} ${d.getDate()}</h2><button class="close" id="close" type="button" aria-label="Chiudi">×</button></div>
+    <div class="sh-head"><h2>${DAYS[dayIndex(d)]} ${d.getDate()}</h2><button class="close" id="close" type="button" aria-label="Chiudi">×</button></div>
     <div class="grid choose">${allItems().map(x => pickTile(x, 'data-pick', x.id === curId)).join('')}</div>
     ${curId ? `<button class="btn alt" id="clear-slot" type="button">Togli ${esc(find(curId).nome.toLowerCase())}</button>` : ''}
   </div>`;
@@ -238,7 +237,7 @@ function showToast(text, undo) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 6000);
 }
 function mark(id, date, slot) {
-  const key = slotId(date, slot), prev = state.logs[key], where = slotName(date, slot, dateKey(now()));
+  const key = slotId(date, slot), prev = state.logs[key], where = dayName(date, dateKey(now()));
   const nome = find(id).nome;
   let text;
   if (prev === id) { delete state.logs[key]; text = `Tolto ${nome.toLowerCase()} da ${where}`; }
